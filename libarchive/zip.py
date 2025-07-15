@@ -99,21 +99,56 @@ class ZipFile(SeekableArchive):
         else:
             return self.writestream(name)
 
-    def extract(self, name, path=None, pwd=None):
+    def extract(self, name: str, path=None, pwd=None, withoutpath: bool = True):
+        """
+        Method for extracting sigle file in the zip archive.
+        Parameters
+        ----------
+            name: str
+                name of file inside the archive
+            path: str
+                target directory, where the archive should be extracted
+            pwd: str
+                password to the archive being extracted
+            withoutpath: bool
+                boolean flag to determine whether the name of extracted file
+                should remain same (False) or should  be sanitized (True)
+        """
         if pwd:
             self.add_passphrase(pwd)
         if not path:
             path = os.getcwd()
-        return self.readpath(name, os.path.join(path, name))
+        if withoutpath:
+            arcname = self.sanitize_filename(filename=name)
+            targetpath = os.path.join(path, arcname)
+            targetpath = os.path.normpath(targetpath)
+        else:
+            targetpath = os.path.join(path, name)
+        return self.readpath(name, targetpath)
 
-    def extractall(self, path, names=None, pwd=None):
+    def extractall(self, path, names=None, pwd=None, withoutpath: bool = True):
+        """
+        Method for extracting all the files provided in names array. In case names are not provided, they are
+        obtained by namelist method.
+        Parameters
+        ----------
+            path: str
+                target directory, where the archive should be extracted
+            names: list
+                array of names of files to be extracted
+            pwd: str
+                password to the archive being extracted
+            withoutpath: bool
+                boolean flag to determine whether the name of extracted file
+                should remain same (False) or should  be sanitized (True)
+        """
         if pwd:
             self.add_passphrase(pwd)
         if not names:
             names = self.namelist()
         if names:
             for name in names:
-                self.extract(name, path)
+                self.extract(name, path, withoutpath=withoutpath)
 
     def read(self, name, pwd=None):
         if pwd:
