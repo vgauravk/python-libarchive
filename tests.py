@@ -31,7 +31,7 @@ import zipfile
 import io
 
 from libarchive import Archive, is_archive_name, is_archive
-from libarchive.zip import is_zipfile, ZipFile, ZipEntry
+from libarchive.zip import is_zipfile, ZipFile, ZipEntry, sanitize_filename
 
 PY3 = sys.version_info[0] == 3
 
@@ -371,6 +371,71 @@ class TestHighLevelAPI(unittest.TestCase):
         with open(ZIPPATH, 'rb') as zf:
             with io.FileIO(zf.fileno(), mode='r', closefd=False) as f:
                 self._test_listing_content(f)
+
+
+class TestZipSanitizer(unittest.TestCase):
+    def test_sanitize_filename_safe(self):
+        self.assertEqual(sanitize_filename("test.txt"), "test.txt")
+
+    def test_sanitize_filename_traversal(self):
+        with self.assertRaises(ValueError) as cm:
+            sanitize_filename("../etc/passwd")
+        self.assertIn("Potential directory traversal attempt detected", str(cm.exception))
+
+    def test_sanitize_filename_absolute_path(self):
+        with self.assertRaises(ValueError) as cm:
+            sanitize_filename("/etc/passwd")
+        self.assertIn("Potential directory traversal attempt detected", str(cm.exception))
+
+
+class TestZipExtractionSecurity(unittest.TestCase):
+
+    def create_test_zip(self, zip_path, filenames):
+        import zipfile
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            for filename in filenames:
+                zf.writestr(filename, "Test content")
+
+    def test_extract_safe(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = os.path.join(temp_dir, "test.zip")
+            self.create_test_zip(zip_path, ["file1.txt", "subdir/file2.txt"])
+
+            with ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extract("file1.txt", temp_dir)
+
+            self.assertTrue(os.path.exists(os.path.join(temp_dir, "file1.txt")))
+
+    def test_extract_traversal_attack(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = os.path.join(temp_dir, "test.zip")
+            self.create_test_zip(zip_path, ["../evil.txt"])
+
+            with ZipFile(zip_path, 'r') as zip_ref:
+                with self.assertRaises(ValueError) as cm:
+                    zip_ref.extract("../evil.txt", temp_dir)
+                self.assertIn("Potential directory traversal attempt detected", str(cm.exception))
+
+    def test_extractall_safe(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = os.path.join(temp_dir, "test.zip")
+            self.create_test_zip(zip_path, ["file1.txt", "subdir/file2.txt"])
+
+            with ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+
+            self.assertTrue(os.path.exists(os.path.join(temp_dir, "file1.txt")))
+            self.assertTrue(os.path.exists(os.path.join(temp_dir, "subdir", "file2.txt")))
+
+    def test_extractall_with_traversal_attack(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = os.path.join(temp_dir, "test.zip")
+            self.create_test_zip(zip_path, ["file1.txt", "../evil.txt"])
+
+            with ZipFile(zip_path, 'r') as zip_ref:
+                with self.assertRaises(ValueError) as cm:
+                    zip_ref.extractall(temp_dir)
+                self.assertIn("Potential directory traversal attempt detected", str(cm.exception))
 
 
 if __name__ == '__main__':

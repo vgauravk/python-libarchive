@@ -6,6 +6,19 @@ from zipfile import ZIP_STORED, ZIP_DEFLATED
 def is_zipfile(filename):
     return is_archive(filename, formats=('zip',))
 
+def sanitize_filename(filename, base_path=os.getcwd()):
+    """
+    Normalize and validate paths to prevent directory traversal.
+    Allows safe subdirectories but blocks traversal outside base_path.
+    """
+    base_path = os.path.abspath(base_path)
+    target_path = os.path.abspath(os.path.join(base_path, filename))
+
+    if not target_path.startswith(base_path + os.sep) and target_path != base_path:
+        raise ValueError("Invalid filename: Potential directory traversal attempt detected.")
+
+    return filename  # DO NOT strip subdirectories!
+
 
 class ZipEntry(Entry):
     def __init__(self, *args, **kwargs):
@@ -99,56 +112,23 @@ class ZipFile(SeekableArchive):
         else:
             return self.writestream(name)
 
-    def extract(self, name: str, path=None, pwd=None, withoutpath: bool = True):
-        """
-        Method for extracting sigle file in the zip archive.
-        Parameters
-        ----------
-            name: str
-                name of file inside the archive
-            path: str
-                target directory, where the archive should be extracted
-            pwd: str
-                password to the archive being extracted
-            withoutpath: bool
-                boolean flag to determine whether the name of extracted file
-                should remain same (False) or should  be sanitized (True)
-        """
+    def extract(self, name, path=None, pwd=None):
         if pwd:
             self.add_passphrase(pwd)
         if not path:
             path = os.getcwd()
-        if withoutpath:
-            arcname = self.sanitize_filename(filename=name)
-            targetpath = os.path.join(path, arcname)
-            targetpath = os.path.normpath(targetpath)
-        else:
-            targetpath = os.path.join(path, name)
-        return self.readpath(name, targetpath)
+        sanitized_name = sanitize_filename(name)
+        return self.readpath(sanitized_name, os.path.join(path, sanitized_name))
 
-    def extractall(self, path, names=None, pwd=None, withoutpath: bool = True):
-        """
-        Method for extracting all the files provided in names array. In case names are not provided, they are
-        obtained by namelist method.
-        Parameters
-        ----------
-            path: str
-                target directory, where the archive should be extracted
-            names: list
-                array of names of files to be extracted
-            pwd: str
-                password to the archive being extracted
-            withoutpath: bool
-                boolean flag to determine whether the name of extracted file
-                should remain same (False) or should  be sanitized (True)
-        """
+    def extractall(self, path, names=None, pwd=None):
         if pwd:
             self.add_passphrase(pwd)
         if not names:
             names = self.namelist()
         if names:
             for name in names:
-                self.extract(name, path, withoutpath=withoutpath)
+                sanitized_name = sanitize_filename(name, path)
+                self.extract(sanitized_name, path)
 
     def read(self, name, pwd=None):
         if pwd:
