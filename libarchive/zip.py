@@ -6,6 +6,19 @@ from zipfile import ZIP_STORED, ZIP_DEFLATED
 def is_zipfile(filename):
     return is_archive(filename, formats=('zip',))
 
+def sanitize_filename(filename, base_path=os.getcwd()):
+    """
+    Normalize and validate paths to prevent directory traversal.
+    Allows safe subdirectories but blocks traversal outside base_path.
+    """
+    base_path = os.path.abspath(base_path)
+    target_path = os.path.abspath(os.path.join(base_path, filename))
+
+    if not target_path.startswith(base_path + os.sep) and target_path != base_path:
+        raise ValueError("Invalid filename: Potential directory traversal attempt detected.")
+
+    return filename  # DO NOT strip subdirectories!
+
 
 class ZipEntry(Entry):
     def __init__(self, *args, **kwargs):
@@ -104,7 +117,8 @@ class ZipFile(SeekableArchive):
             self.add_passphrase(pwd)
         if not path:
             path = os.getcwd()
-        return self.readpath(name, os.path.join(path, name))
+        sanitized_name = sanitize_filename(name)
+        return self.readpath(sanitized_name, os.path.join(path, sanitized_name))
 
     def extractall(self, path, names=None, pwd=None):
         if pwd:
@@ -113,7 +127,8 @@ class ZipFile(SeekableArchive):
             names = self.namelist()
         if names:
             for name in names:
-                self.extract(name, path)
+                sanitized_name = sanitize_filename(name, path)
+                self.extract(sanitized_name, path)
 
     def read(self, name, pwd=None):
         if pwd:
